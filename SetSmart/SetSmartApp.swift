@@ -1,31 +1,22 @@
-//
-//  SetSmartApp.swift
-//  SetSmart
-//
-//  Created by Tyrique Zimbizi on 15/11/2026.
-//
-
 import SwiftUI
 import SwiftData
 
 @main
 struct SetSmartApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+    @State private var appState = AppState()
 
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
+    // SwiftData container kept for future local caching
+    var sharedModelContainer: ModelContainer = {
+        let schema = Schema([Item.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        return (try? ModelContainer(for: schema, configurations: [config]))
+            ?? (try! ModelContainer(for: schema))
     }()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+                .environment(appState)
         }
         .modelContainer(sharedModelContainer)
     }

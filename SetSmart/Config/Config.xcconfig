@@ -1,0 +1,12 @@
+// Config.xcconfig — build configuration for SetSmart
+// Wire this file to the Debug and Release configurations in:
+//   Project → SetSmart target → Info → Configurations
+// Then add the three keys below to Info.plist as:
+//   SupabaseURL    → $(SUPABASE_URL)
+//   SupabaseAnonKey→ $(SUPABASE_ANON_KEY)
+//   USDAAPIKey     → $(USDA_API_KEY)
+
+// $() stops xcconfig treating // as a comment
+SUPABASE_URL = https:/$()/woynvgflkzbnquhftesv.supabase.co
+SUPABASE_ANON_KEY = sb_publishable_ybaR21bJy6Wpc3w2Fu6KRw__5O9bkTm
+USDA_API_KEY = bzFrCTLw8jm6QRMMrt9TdTdNHhR7C99tfrJLRfNM
