@@ -15,7 +15,8 @@ struct AuthView: View {
             }
             .background(Color.ssBackground.ignoresSafeArea())
         }
-        .sheet(isPresented: $showForgotPassword) {
+        .sheet(isPresented: $showForgotPassword)
+        {
             ForgotPasswordView()
         }
     }

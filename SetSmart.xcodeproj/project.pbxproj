@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B80BFE1D30AA54DD00A350E9 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = B80BFE1C30AA54DD00A350E9 /* Supabase */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		B80BFD8B30A9E24800A350E9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B80BFE1D30AA54DD00A350E9 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 				B80BFD7D30A9E24500A350E9 /* SetSmart */,
 				B80BFD8D30A9E24800A350E9 /* SetSmartTests */,
 				B80BFD9730A9E24800A350E9 /* SetSmartUITests */,
+				B80BFE1B30AA54C200A350E9 /* Frameworks */,
 				B80BFD7C30A9E24500A350E9 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +96,13 @@
 				B80BFD9430A9E24800A350E9 /* SetSmartUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B80BFE1B30AA54C200A350E9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +125,7 @@
 			);
 			name = SetSmart;
 			packageProductDependencies = (
+				B80BFE1C30AA54DD00A350E9 /* Supabase */,
 			);
 			productName = SetSmart;
 			productReference = B80BFD7B30A9E24500A350E9 /* SetSmart.app */;
@@ -195,6 +209,9 @@
 			);
 			mainGroup = B80BFD7230A9E24400A350E9;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B80BFDE130A9FCEB00A350E9 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B80BFD7C30A9E24500A350E9 /* Products */;
 			projectDirPath = "";
@@ -271,6 +288,8 @@
 /* Begin XCBuildConfiguration section */
 		B80BFD9C30A9E24800A350E9 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = B80BFD7D30A9E24500A350E9 /* SetSmart */;
+			baseConfigurationReferenceRelativePath = Config/Config.xcconfig;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -335,6 +354,8 @@
 		};
 		B80BFD9D30A9E24800A350E9 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = B80BFD7D30A9E24500A350E9 /* SetSmart */;
+			baseConfigurationReferenceRelativePath = Config/Config.xcconfig;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -392,6 +413,8 @@
 		};
 		B80BFD9F30A9E24800A350E9 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = B80BFD7D30A9E24500A350E9 /* SetSmart */;
+			baseConfigurationReferenceRelativePath = Config/Config.xcconfig;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -400,6 +423,9 @@
 				DEVELOPMENT_TEAM = JTJDF2939N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = SetSmart;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				INFOPLIST_KEY_NSCameraUsageDescription = "App uses camera to scan barcodes";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -424,6 +450,8 @@
 		};
 		B80BFDA030A9E24800A350E9 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = B80BFD7D30A9E24500A350E9 /* SetSmart */;
+			baseConfigurationReferenceRelativePath = Config/Config.xcconfig;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -432,6 +460,9 @@
 				DEVELOPMENT_TEAM = JTJDF2939N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = SetSmart;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				INFOPLIST_KEY_NSCameraUsageDescription = "App uses camera to scan barcodes";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -578,6 +609,27 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B80BFDE130A9FCEB00A350E9 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+			traits = (
+			);
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B80BFE1C30AA54DD00A350E9 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B80BFDE130A9FCEB00A350E9 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = B80BFD7330A9E24400A350E9 /* Project object */;
 }
