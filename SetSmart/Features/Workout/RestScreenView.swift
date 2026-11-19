@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct RestScreenView: View {
     @Environment(AppState.self) private var appState
@@ -47,6 +48,27 @@ struct RestScreenView: View {
             AlarmService.shared.stop()
             alarmRinging = false
             ringPulse    = false
+        }
+        // When the app backgrounds, pre-schedule the alarm so it fires even from another app.
+        // The audio session stays alive via chained silence buffers (requires Audio background mode).
+        .task {
+            for await _ in NotificationCenter.default.notifications(named: UIApplication.didEnterBackgroundNotification) {
+                guard !alarmRinging else { continue } // alarm already ringing; audio continues as-is
+                AlarmService.shared.scheduleLooping(at: endsAt)
+            }
+        }
+        // When foregrounding: either the alarm fired while away (update UI) or rest is still going (cancel pre-schedule).
+        .task {
+            for await _ in NotificationCenter.default.notifications(named: UIApplication.willEnterForegroundNotification) {
+                if endsAt.timeIntervalSinceNow <= 0, !alarmRinging {
+                    // Alarm fired in background — audio already looping, just catch up the UI
+                    alarmRinging = true
+                    HapticsService.restOver()
+                } else if endsAt.timeIntervalSinceNow > 0 {
+                    // Rest still counting — stop the background pre-schedule
+                    AlarmService.shared.stop()
+                }
+            }
         }
     }
 

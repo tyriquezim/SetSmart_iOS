@@ -47,7 +47,7 @@ struct RootView: View {
                 appState.resetLinkError = nil
             }
         } message: {
-            Text("That reset link has expired or was already used.")
+            Text(appState.resetLinkError ?? "That reset link has expired or was already used.")
         }
         .sheet(isPresented: $showForgotPasswordAfterExpiredLink) {
             ForgotPasswordView()

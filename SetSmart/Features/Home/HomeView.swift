@@ -211,9 +211,9 @@ struct HomeView: View {
                     }
 
                     // Macros row
-                    let p = todayLogs.reduce(0.0) { $0 + ($1.proteinG ?? 0) }
-                    let c = todayLogs.reduce(0.0) { $0 + ($1.carbsG   ?? 0) }
-                    let f = todayLogs.reduce(0.0) { $0 + ($1.fatG     ?? 0) }
+                    let p = todayLogs.reduce(0.0) { $0 + $1.proteinG }
+                    let c = todayLogs.reduce(0.0) { $0 + $1.carbsG }
+                    let f = todayLogs.reduce(0.0) { $0 + $1.fatG }
 
                     HStack(spacing: 0) {
                         macroCol("P", value: p, target: targets?.proteinG)

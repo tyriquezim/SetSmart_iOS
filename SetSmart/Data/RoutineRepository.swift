@@ -16,7 +16,7 @@ struct RoutineRepository {
     func loadRoutine(id: UUID) async throws -> Routine {
         try await db
             .from("routines")
-            .select("id,name,notes,updated_at,routine_exercises(exercise_id,position,rest_seconds,sets,notes,exercise:exercises(*))")
+            .select("id,name,notes,updated_at,routine_exercises(exercise_id,position,rest_seconds,sets,notes,target_duration_s,exercise:exercises(*))")
             .eq("id", value: id.uuidString)
             .order("position", ascending: true, referencedTable: "routine_exercises")
             .single()
@@ -73,18 +73,20 @@ struct SaveRoutineExercise: Encodable {
     let rest_seconds: Int
     let sets: [SavePlannedSet]
     let notes: String?
+    let target_duration_s: Int?
 
     enum CodingKeys: String, CodingKey {
-        case exercise_id, position, rest_seconds, sets, notes
+        case exercise_id, position, rest_seconds, sets, notes, target_duration_s
     }
 
     func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(exercise_id,  forKey: .exercise_id)
-        try c.encode(position,     forKey: .position)
-        try c.encode(rest_seconds, forKey: .rest_seconds)
-        try c.encode(sets,         forKey: .sets)
-        try c.encode(notes,        forKey: .notes)
+        try c.encode(exercise_id,       forKey: .exercise_id)
+        try c.encode(position,          forKey: .position)
+        try c.encode(rest_seconds,      forKey: .rest_seconds)
+        try c.encode(sets,              forKey: .sets)
+        try c.encode(notes,             forKey: .notes)
+        try c.encode(target_duration_s, forKey: .target_duration_s)
     }
 }
 

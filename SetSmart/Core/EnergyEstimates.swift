@@ -15,13 +15,14 @@ struct BodyStats: Sendable {
 // MARK: - Result types
 
 enum MissingDetail: String, Sendable, Equatable {
-    case weight, height, birthYear
+    case weight, height, birthYear, met
 
     var phrase: String {
         switch self {
         case .weight:    return "log your weight"
         case .height:    return "add your height"
         case .birthYear: return "add your birth year"
+        case .met:       return "add a MET value"
         }
     }
 }
@@ -46,15 +47,32 @@ struct WorkoutEnergyResult: Sendable {
     var effort: WorkoutEffort
 }
 
+/// Full workout energy including both weight-training and embedded cardio breakdowns.
+struct WorkoutEnergyFull: Sendable {
+    var weightsKcal: Double
+    var weightsMinutes: Double
+    var weightsCapped: Bool
+    var weightsMet: Double
+    var weightsEffort: WorkoutEffort
+    var cardioKcal: Double
+    var cardioEstimates: [(name: String, estimate: CardioEnergyEstimate)]
+    var weightKg: Double
+    var restingKcalPerMin: Double
+    var restingResult: RestingEnergyResult
+
+    var totalKcal: Double { weightsKcal + cardioKcal }
+}
+
 struct DayEnergyComponents: Sendable {
     var restingKcal: Double
     var everydayKcal: Double
     var workoutKcal: Double
+    var cardioKcal: Double
     var activityAssumed: Bool
     var pal: Double
     var restingResult: RestingEnergyResult
 
-    var totalKcal: Double { restingKcal + everydayKcal + workoutKcal }
+    var totalKcal: Double { restingKcal + everydayKcal + workoutKcal + cardioKcal }
 }
 
 enum DayEnergyResult: Sendable {
@@ -150,15 +168,16 @@ func missingDetails(stats: BodyStats?, profile: Profile) -> [MissingDetail] {
     return m
 }
 
-/// Energy burned in a single workout above resting, in kcal.
+/// Energy burned in a single weight-training workout above resting, in kcal.
+/// `rawMinutes` should already have cardio time subtracted before passing.
 func workoutEnergyFor(startedAt: Date, finishedAt: Date, stats: BodyStats) -> WorkoutEnergyResult {
     let rawMinutes     = max(0, finishedAt.timeIntervalSince(startedAt) / 60)
     let minutes        = min(rawMinutes, maxWorkoutMinutes)
     let capped         = rawMinutes > maxWorkoutMinutes
     let met            = stats.workoutEffort.met
-    let gross          = met * 3.5 * stats.weightKg / 200
-    let restKcalPerMin = (restingEnergy(stats: stats)?.kcalPerDay ?? 0) / 1440
-    let kcal           = max(0, gross - restKcalPerMin) * minutes
+    let restKcalPerDay = restingEnergy(stats: stats)?.kcalPerDay ?? 0
+    let restKcalPerMin = restKcalPerDay / 1440
+    let kcal           = netActivityKcal(met: met, minutes: minutes, weightKg: stats.weightKg, restingKcalPerDay: restKcalPerDay)
     return WorkoutEnergyResult(
         kcal:              kcal,
         minutes:           minutes,
@@ -170,10 +189,53 @@ func workoutEnergyFor(startedAt: Date, finishedAt: Date, stats: BodyStats) -> Wo
     )
 }
 
-/// Whole-day energy estimate.
+/// Full workout energy for a slot that may contain both sets and embedded cardio.
+func estimateWorkoutEnergy(slot: WorkoutSlot, weights: [BodyWeight], profile: Profile) -> WorkoutEnergyFull? {
+    guard let startedAt = Optional(slot.startedAt) else { return nil }
+    let day = localDayString(from: startedAt)
+    guard let stats   = bodyStatsOn(day: day, weights: weights, profile: profile),
+          let resting = restingEnergy(stats: stats) else { return nil }
+
+    let restKcalPerMin = resting.kcalPerDay / 1440
+    let met            = stats.workoutEffort.met
+
+    // Weight-training time: total minus cardio time (floored at 0, capped at 180 min)
+    let cardioMin = slot.cardio.reduce(0.0) { $0 + Double($1.durationS) / 60.0 }
+    let totalMin  = slot.finishedAt.map { $0.timeIntervalSince(startedAt) / 60 } ?? 0
+    let pureCardio = slot.setCount == 0 && !slot.cardio.isEmpty
+    let rawWeightsMin: Double = pureCardio ? 0 : max(0, totalMin - cardioMin)
+    let weightsMin = min(rawWeightsMin, maxWorkoutMinutes)
+    let capped     = rawWeightsMin > maxWorkoutMinutes
+    let weightsKcal = netActivityKcal(met: met, minutes: weightsMin,
+                                      weightKg: stats.weightKg, restingKcalPerDay: resting.kcalPerDay)
+
+    // Per-cardio estimates
+    var cardioTotalKcal = 0.0
+    var cardioEstimates: [(name: String, estimate: CardioEnergyEstimate)] = []
+    for row in slot.cardio {
+        let est = row.energyEstimate(weights: weights, profile: profile)
+        if case .result(let r) = est { cardioTotalKcal += r.kcal }
+        cardioEstimates.append((name: row.exercise?.name ?? row.activity.label, estimate: est))
+    }
+
+    return WorkoutEnergyFull(
+        weightsKcal:      weightsKcal,
+        weightsMinutes:   weightsMin,
+        weightsCapped:    capped,
+        weightsMet:       met,
+        weightsEffort:    stats.workoutEffort,
+        cardioKcal:       cardioTotalKcal,
+        cardioEstimates:  cardioEstimates,
+        weightKg:         stats.weightKg,
+        restingKcalPerMin: restKcalPerMin,
+        restingResult:    resting
+    )
+}
+
+/// Whole-day energy estimate. Workouts are `WorkoutSlot` values (which embed cardio rows).
 func estimateDayEnergy(
     day:      String,
-    workouts: [(startedAt: Date, finishedAt: Date?)],
+    workouts: [WorkoutSlot],
     weights:  [BodyWeight],
     profile:  Profile
 ) -> DayEnergyResult {
@@ -186,15 +248,43 @@ func estimateDayEnergy(
     let pal             = stats.dailyActivity?.pal ?? 1.4
     let activityAssumed = stats.dailyActivity == nil
     let everydayKcal    = resting.kcalPerDay * (pal - 1)
-    let dayWorkouts     = workouts.filter { localDayString(from: $0.startedAt) == day }
-    let workoutKcal     = dayWorkouts.reduce(0.0) { sum, w in
-        guard let fin = w.finishedAt else { return sum }
-        return sum + workoutEnergyFor(startedAt: w.startedAt, finishedAt: fin, stats: stats).kcal
+    let met             = stats.workoutEffort.met
+
+    var workoutKcal = 0.0
+    var cardioKcal  = 0.0
+    for slot in workouts where localDayString(from: slot.startedAt) == day {
+        // Weight-training component
+        let cardioMin  = slot.cardio.reduce(0.0) { $0 + Double($1.durationS) / 60.0 }
+        let totalMin   = slot.finishedAt.map { $0.timeIntervalSince(slot.startedAt) / 60 } ?? 0
+        let pureCardio = slot.setCount == 0 && !slot.cardio.isEmpty
+        let rawMin: Double = pureCardio ? 0 : max(0, totalMin - cardioMin)
+        let weightsMin = min(rawMin, maxWorkoutMinutes)
+        workoutKcal += netActivityKcal(met: met, minutes: weightsMin,
+                                       weightKg: stats.weightKg, restingKcalPerDay: resting.kcalPerDay)
+
+        // Cardio component from embedded rows
+        for row in slot.cardio {
+            guard let src = cardioMet(activity: row.activity, customMet: row.exercise?.cardioMet,
+                                      durationS: row.durationS, distanceM: row.distanceM,
+                                      effort: row.effort) else { continue }
+            let rowMet: Double
+            switch src {
+            case .speed(let r, _):  rowMet = r.met
+            case .effort(let r, _): rowMet = r.met
+            case .custom(let m):    rowMet = m
+            }
+            cardioKcal += netActivityKcal(
+                met: rowMet, minutes: Double(row.durationS) / 60.0,
+                weightKg: stats.weightKg, restingKcalPerDay: resting.kcalPerDay
+            )
+        }
     }
+
     return .result(DayEnergyComponents(
         restingKcal:     resting.kcalPerDay,
         everydayKcal:    everydayKcal,
         workoutKcal:     workoutKcal,
+        cardioKcal:      cardioKcal,
         activityAssumed: activityAssumed,
         pal:             pal,
         restingResult:   resting

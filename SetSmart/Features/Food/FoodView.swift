@@ -12,7 +12,7 @@ struct FoodView: View {
     @State private var showTargets = false
     @State private var chartSelection: String?
     @State private var allWeights: [BodyWeight] = []
-    @State private var dayWorkoutTimes: [(startedAt: Date, finishedAt: Date?)] = []
+    @State private var dayWorkoutSlots: [WorkoutSlot] = []
     @State private var showFullExplanation = false
 
     private let repo        = FoodRepository()
@@ -120,7 +120,10 @@ struct FoodView: View {
 
     private var dayEnergyResult: DayEnergyResult? {
         guard let profile = appState.profile else { return nil }
-        return estimateDayEnergy(day: selectedDateStr, workouts: dayWorkoutTimes, weights: allWeights, profile: profile)
+        return estimateDayEnergy(
+            day: selectedDateStr, workouts: dayWorkoutSlots,
+            weights: allWeights, profile: profile
+        )
     }
 
     private var dayBodyStats: BodyStats? {
@@ -252,12 +255,21 @@ struct FoodView: View {
                 info: .everydayActivity(restingKcal: c.restingKcal, pal: c.pal, activity: c.activityAssumed ? nil : appState.profile?.dailyActivity, assumed: c.activityAssumed)
             )
             energyBreakdownRow(
-                label: "Workouts",
+                label: "Weight training",
                 kcal: c.workoutKcal,
                 info: .workoutsDay(
                     workoutKcal: c.workoutKcal,
                     met: stats.workoutEffort.met,
                     effort: stats.workoutEffort,
+                    weightKg: stats.weightKg,
+                    restingKcalPerMin: c.restingKcal / 1440
+                )
+            )
+            energyBreakdownRow(
+                label: "Cardio",
+                kcal: c.cardioKcal,
+                info: .cardioDay(
+                    cardioKcal: c.cardioKcal,
                     weightKg: stats.weightKg,
                     restingKcalPerMin: c.restingKcal / 1440
                 )
@@ -537,8 +549,7 @@ struct FoodView: View {
         let weekStart = String.foodDate(daysFromToday: -6)
         do {
             allWeights = try await bwRepo.listBodyWeights()
-            let slots = try await workoutRepo.fetchWorkoutTimes(localDay: selectedDateStr)
-            dayWorkoutTimes = slots.map { ($0.startedAt, $0.finishedAt) }
+            dayWorkoutSlots = try await workoutRepo.fetchWorkoutSlots(localDay: selectedDateStr)
             weekLogs = try await repo.fetchLogs(from: weekStart, to: today)
             if loadTargets { targets = try await repo.fetchTargets() }
             if selectedDateStr >= weekStart && selectedDateStr <= today {

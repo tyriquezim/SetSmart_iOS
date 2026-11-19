@@ -97,7 +97,7 @@ struct SetScreenView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.ssAccent)
                 Spacer()
-                Text("Exercise \(workout.performedOrder.count + 1) of \(workout.exercises.count)")
+                Text("Exercise \((workout.performedOrder.firstIndex(of: workout.queue[0]) ?? workout.performedOrder.count) + 1) of \(workout.exercises.count)")
                     .font(.subheadline)
                     .foregroundStyle(Color.ssTextSecondary)
             }

@@ -39,7 +39,13 @@ struct RoutineEditorView: View {
                                 Text(draft.exercises[idx].exerciseName)
                                     .font(.body.weight(.medium))
                                     .foregroundStyle(Color.ssTextPrimary)
-                                Text("\(draft.exercises[idx].setsDescription) · \(draft.exercises[idx].restDescription)")
+                                Group {
+                                    if draft.exercises[idx].isCardio {
+                                        Text("Cardio · \(draft.exercises[idx].goalDescription)")
+                                    } else {
+                                        Text("\(draft.exercises[idx].setsDescription) · \(draft.exercises[idx].restDescription)")
+                                    }
+                                }
                                     .font(.caption)
                                     .foregroundStyle(Color.ssTextSecondary)
                             }
@@ -131,11 +137,12 @@ struct RoutineEditorView: View {
         errorMessage = nil
         let exercises = draft.exercises.enumerated().map { (idx, ex) in
             SaveRoutineExercise(
-                exercise_id: ex.exerciseId,
-                position: idx,
-                rest_seconds: ex.restSeconds,
-                sets: ex.sets.map { SavePlannedSet(reps: $0.reps, weight_kg: $0.weightKg) },
-                notes: ex.notes.isEmpty ? nil : ex.notes
+                exercise_id:       ex.exerciseId,
+                position:          idx,
+                rest_seconds:      ex.restSeconds,
+                sets:              ex.sets.map { SavePlannedSet(reps: $0.reps, weight_kg: $0.weightKg) },
+                notes:             ex.notes.isEmpty ? nil : ex.notes,
+                target_duration_s: ex.targetDurationMin.map { $0 * 60 }
             )
         }
         Task {

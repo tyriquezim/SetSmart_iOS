@@ -21,7 +21,7 @@ struct ForgotPasswordView: View {
                             Text("Reset link sent")
                                 .font(.title2.bold())
                                 .foregroundStyle(Color.ssTextPrimary)
-                            Text("Check your email and follow the link to reset your password.")
+                            Text("If an account exists for that email, a reset link is on its way. Open it on this iPhone.")
                                 .multilineTextAlignment(.center)
                                 .foregroundStyle(Color.ssTextSecondary)
                             Button("Done") { dismiss() }

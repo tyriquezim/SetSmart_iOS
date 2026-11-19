@@ -33,9 +33,22 @@
 		B80BFD9430A9E24800A350E9 /* SetSmartUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SetSmartUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B80BFE5F30AEEC6A00A350E9 /* Exceptions for "SetSmart" folder in "SetSmart" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = B80BFD7A30A9E24500A350E9 /* SetSmart */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		B80BFD7D30A9E24500A350E9 /* SetSmart */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B80BFE5F30AEEC6A00A350E9 /* Exceptions for "SetSmart" folder in "SetSmart" target */,
+			);
 			path = SetSmart;
 			sourceTree = "<group>";
 		};
@@ -423,9 +436,10 @@
 				DEVELOPMENT_TEAM = JTJDF2939N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SetSmart/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SetSmart;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSCameraUsageDescription = "App uses camera to scan barcodes";
+				INFOPLIST_KEY_NSCameraUsageDescription = "This enables the Barcode Scan feature.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -460,9 +474,10 @@
 				DEVELOPMENT_TEAM = JTJDF2939N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SetSmart/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SetSmart;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSCameraUsageDescription = "App uses camera to scan barcodes";
+				INFOPLIST_KEY_NSCameraUsageDescription = "This enables the Barcode Scan feature.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

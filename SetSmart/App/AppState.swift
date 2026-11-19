@@ -40,6 +40,10 @@ final class AppState {
     // MARK: - One-time notices (in memory only, not persisted)
     var deletionNotice: String? = nil
 
+    // MARK: - Password recovery (in memory only; cleared on signOut or successful save)
+    var isRecoveringPassword = false
+    var resetLinkError: String? = nil
+
     private let client = SupabaseClientProvider.shared
     private let profileRepo = ProfileRepository()
     private let workoutRepo = WorkoutRepository()
@@ -64,10 +68,13 @@ final class AppState {
                     await restoreWorkout(userId: session.user.id)
                     Task { await outbox.drain(for: session.user.id, using: workoutRepo) }
                 }
+            case .passwordRecovery:
+                isRecoveringPassword = true
             case .signedOut:
                 profile = nil
                 activeWorkout = nil
                 isWorkoutPlayerVisible = false
+                isRecoveringPassword = false
                 persistence.delete()
             default:
                 break
@@ -100,8 +107,29 @@ final class AppState {
     func resetPassword(email: String) async throws {
         try await client.auth.resetPasswordForEmail(
             email,
-            redirectTo: URL(string: "https://setsmart.netlify.app")
+            redirectTo: URL(string: "setsmart://reset-password")
         )
+    }
+
+    // Exchanges the one-time code from a setsmart://reset-password deep link for a session.
+    // Sets isRecoveringPassword directly on success rather than relying solely on the .passwordRecovery
+    // auth event, which may not fire reliably when session(from:) is called manually.
+    // Throws if the link has expired or was already used.
+    @MainActor
+    func handlePasswordResetURL(_ url: URL) async throws {
+        _ = try await client.auth.session(from: url)
+        isRecoveringPassword = true
+    }
+
+    @MainActor
+    func updatePassword(_ newPassword: String) async throws {
+        try await client.auth.update(user: UserAttributes(password: newPassword))
+        isRecoveringPassword = false
+    }
+
+    // Signs out; the .signedOut listener clears isRecoveringPassword and returns to AuthView.
+    func cancelPasswordRecovery() async throws {
+        try await client.auth.signOut()
     }
 
     @MainActor

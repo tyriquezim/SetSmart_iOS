@@ -25,6 +25,7 @@ extension Color {
     static let ssWarning     = Color(hex: "#D97706")
     static let ssWarningText = Color(hex: "#FCD34D")
     static let ssDanger      = Color(hex: "#EF4444")
+    static let ssDangerText  = Color(hex: "#FCA5A5")
 
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)

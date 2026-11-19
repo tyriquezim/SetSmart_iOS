@@ -54,9 +54,7 @@ extension WorkoutState {
             phase = .rest(startedAt: s, endsAt: max(now, e.addingTimeInterval(Double(delta))))
 
         case .postpone(let mode):
-            guard phase != .complete,
-                  if case .cardio = phase { false } else { true },
-                  queue.count >= 2 else { return }
+            guard !phase.isCardio, phase != .complete, queue.count >= 2 else { return }
             switch mode {
             case .next: queue.swapAt(0, 1)
             case .end:  queue.append(queue.removeFirst())
@@ -164,10 +162,3 @@ extension WorkoutState {
     }
 }
 
-// Helper: disambiguate the if-let guard pattern for phase check
-private extension Phase {
-    var isCardio: Bool {
-        if case .cardio = self { return true }
-        return false
-    }
-}

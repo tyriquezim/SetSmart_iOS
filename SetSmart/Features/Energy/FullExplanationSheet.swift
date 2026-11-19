@@ -14,6 +14,7 @@ struct FullExplanationSheet: View {
                     restingSection
                     everydaySection
                     workoutsSection
+                    cardioSection
                     whoDoesntSuit
                     sourcesSection
                 }
@@ -146,6 +147,44 @@ struct FullExplanationSheet: View {
         .background(Color.ssSurface)
         .cornerRadius(10)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.ssBorder, lineWidth: 1))
+    }
+
+    private var cardioSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Cardio")
+            Text("Each cardio session also uses a MET value from the 2024 Compendium of Physical Activities, with the same formula as workouts. Only the energy above resting counts, and cardio duration is not capped at 3 hours.")
+                .font(.subheadline)
+                .foregroundStyle(Color.ssTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let c = components, c.cardioKcal > 0 {
+                Text("Yours: about \(formatEnergyEstimate(c.cardioKcal, unit: energyUnit)) from cardio today.")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.ssTextPrimary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("How the MET is picked:")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.ssTextPrimary)
+                Text("• **Runs, walks and outdoor rides with a distance:** average speed (distance ÷ time) picks the closest Compendium row.")
+                    .font(.caption)
+                    .foregroundStyle(Color.ssTextSecondary)
+                Text("• **Everything else:** the effort you chose picks a row, e.g. \"Elliptical, vigorous effort\" (9 METs).")
+                    .font(.caption)
+                    .foregroundStyle(Color.ssTextSecondary)
+                Text("• **Other activities:** enter a MET value from the Compendium.")
+                    .font(.caption)
+                    .foregroundStyle(Color.ssTextSecondary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.ssSurface)
+            .cornerRadius(10)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.ssBorder, lineWidth: 1))
+            Text("The speed rows assume flat ground, so hills, wind and heat aren't counted. Fitter people use a bit less energy at the same speed. [5]")
+                .font(.caption)
+                .foregroundStyle(Color.ssTextMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var whoDoesntSuit: some View {

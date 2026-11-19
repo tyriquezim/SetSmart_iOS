@@ -7,7 +7,9 @@ enum EnergySheetContent: Identifiable, Sendable {
     case everydayActivity(restingKcal: Double, pal: Double, activity: DailyActivity?, assumed: Bool)
     case workoutsDay(workoutKcal: Double, met: Double, effort: WorkoutEffort, weightKg: Double, restingKcalPerMin: Double)
     case totalBurn(DayEnergyComponents)
-    case singleWorkout(WorkoutEnergyResult, restingResult: RestingEnergyResult)
+    case singleWorkout(WorkoutEnergyFull)
+    case cardioDay(cardioKcal: Double, weightKg: Double, restingKcalPerMin: Double)
+    case singleCardio(CardioEnergyResult, restingResult: RestingEnergyResult)
 
     var id: String {
         switch self {
@@ -16,6 +18,8 @@ enum EnergySheetContent: Identifiable, Sendable {
         case .workoutsDay:      return "workoutsDay"
         case .totalBurn:        return "totalBurn"
         case .singleWorkout:    return "singleWorkout"
+        case .cardioDay:        return "cardioDay"
+        case .singleCardio:     return "singleCardio"
         }
     }
 
@@ -26,6 +30,8 @@ enum EnergySheetContent: Identifiable, Sendable {
         case .workoutsDay:      return "How workout energy is estimated"
         case .totalBurn:        return "How total energy burn is estimated"
         case .singleWorkout:    return "How this workout's energy is estimated"
+        case .cardioDay:        return "How cardio energy is estimated"
+        case .singleCardio:     return "How this cardio session's energy is estimated"
         }
     }
 }
@@ -35,6 +41,7 @@ enum EnergySheetContent: Identifiable, Sendable {
 struct InfoButton: View {
     let content: EnergySheetContent
     let unit: EnergyUnit
+    var weightUnit: WeightUnit = .kg
     @State private var showInfo = false
     @State private var showFull = false
 
@@ -49,7 +56,7 @@ struct InfoButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(content.accessibilityLabel)
         .sheet(isPresented: $showInfo) {
-            EnergyInfoSheetView(content: content, unit: unit, showFull: $showFull)
+            EnergyInfoSheetView(content: content, unit: unit, weightUnit: weightUnit, showFull: $showFull)
                 .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showFull) {
@@ -63,6 +70,7 @@ struct InfoButton: View {
 struct EnergyInfoSheetView: View {
     let content: EnergySheetContent
     let unit: EnergyUnit
+    var weightUnit: WeightUnit = .kg
     @Binding var showFull: Bool
     @Environment(\.dismiss) private var dismiss
 
@@ -170,15 +178,13 @@ struct EnergyInfoSheetView: View {
 
     private var sheetTitle: String {
         switch content {
-        case .resting(let r, _):
-            switch r.method {
-            case .cunningham: return "Resting energy (BMR)"
-            case .mifflin, .mifflinAverage: return "Resting energy (BMR)"
-            }
+        case .resting:          return "Resting energy (BMR)"
         case .everydayActivity: return "Everyday activity"
         case .workoutsDay:      return "Workouts"
         case .totalBurn:        return "Estimated burn"
         case .singleWorkout:    return "Workout energy"
+        case .cardioDay:        return "Cardio"
+        case .singleCardio:     return "Cardio energy"
         }
     }
 
@@ -201,11 +207,43 @@ struct EnergyInfoSheetView: View {
         case .workoutsDay(_, let met, let effort, let weightKg, _):
             return "Each workout logged on this day counts \(String(format: "%g", met)) METs for \(effort.rawValue) weight training (2024 Compendium of Physical Activities) for its length, at your weight of \(String(format: "%.1f", weightKg)) kg. Only the energy above resting counts, because resting is already in the total."
         case .totalBurn:
-            return "Your estimated burn for the whole day is three estimates added together."
-        case .singleWorkout(let r, _):
-            var desc = "Based on \(String(format: "%g", r.met)) METs for \(r.effort.rawValue) weight training (2024 Compendium of Physical Activities), your weight of \(String(format: "%.1f", r.weightKg)) kg and the workout's length. Resting energy is subtracted because it's counted separately."
-            if r.capped { desc += " It ran longer than 3 hours, so only 3 hours are counted." }
-            return desc
+            return "Your estimated burn for the whole day is four estimates added together."
+        case .singleWorkout(let wf):
+            var parts: [String] = []
+            if wf.weightsMinutes > 0 {
+                var desc = "Weight training: \(String(format: "%g", wf.weightsMet)) METs for \(wf.weightsEffort.rawValue) (2024 Compendium of Physical Activities), your weight of \(String(format: "%.1f", wf.weightKg)) kg and \(String(format: "%g", wf.weightsMinutes)) min. Resting energy is subtracted because it's counted separately."
+                if wf.weightsCapped { desc += " Capped at 3 hours." }
+                parts.append(desc)
+            }
+            if !wf.cardioEstimates.isEmpty {
+                parts.append("Each cardio exercise is estimated separately from the 2024 Compendium of Physical Activities.")
+            }
+            return parts.isEmpty ? "No energy logged for this workout." : parts.joined(separator: " ")
+        case .cardioDay:
+            return "Each cardio session logged on this day gets a MET value from the 2024 Compendium of Physical Activities. For runs, walks and outdoor rides with a distance, the value comes from your average speed. Otherwise it comes from the effort you chose. Only the energy above resting counts."
+        case .singleCardio(let r, _):
+            return cardioSessionDescription(r)
+        }
+    }
+
+    private func cardioSessionDescription(_ r: CardioEnergyResult) -> String {
+        switch r.metSource {
+        case .speed(let row, let speedKmh):
+            let speedStr: String
+            if weightUnit == .lb {
+                speedStr = String(format: "%.1f mph", speedKmh / 1.609344)
+            } else {
+                speedStr = String(format: "%.1f km/h", speedKmh)
+            }
+            return "Your average speed was \(speedStr). The closest row in the 2024 Compendium of Physical Activities is \"\(row.description)\" (code \(row.code)), which is \(String(format: "%g", row.met)) METs."
+        case .effort(let row, let defaulted):
+            if defaulted {
+                return "No effort was chosen, so the middle option is used: \"\(row.description)\" in the 2024 Compendium of Physical Activities (code \(row.code)), which is \(String(format: "%g", row.met)) METs."
+            } else {
+                return "You chose an effort that matches \"\(row.description)\" in the 2024 Compendium of Physical Activities (code \(row.code)), which is \(String(format: "%g", row.met)) METs."
+            }
+        case .custom(let m):
+            return "You entered \(String(format: "%g", m)) METs for this activity."
         }
     }
 
@@ -214,6 +252,8 @@ struct EnergyInfoSheetView: View {
         case .everydayActivity: return "The levels are 1.4, 1.55 and 1.75."
         case .workoutsDay:      return "Change workout effort in Settings."
         case .totalBurn:        return "The ± figure is 10%, because these equations are usually within about 10% for most people. For some people they're further off."
+        case .cardioDay:        return "Tap a session in History to see how its estimate was worked out."
+        case .singleCardio:     return "Hills, wind, heat and your fitness change the real number, and they aren't counted."
         default:                return nil
         }
     }
@@ -261,17 +301,47 @@ struct EnergyInfoSheetView: View {
             let rest     = formatThousands(Int(c.restingKcal.rounded()))
             let everyday = formatThousands(Int(c.everydayKcal.rounded()))
             let workout  = formatThousands(Int(c.workoutKcal.rounded()))
+            let cardio   = formatThousands(Int(c.cardioKcal.rounded()))
             let total    = formatThousands(Int(c.totalKcal.rounded()))
-            return ["resting \(rest) + everyday \(everyday) + workouts \(workout)",
+            return ["resting \(rest) + everyday \(everyday) + workouts \(workout) +",
+                    "cardio \(cardio)",
                     "= \(total) kcal"]
 
-        case .singleWorkout(let r, _):
-            let g   = String(format: "%.1f", r.met * 3.5 * r.weightKg / 200)
+        case .singleWorkout(let wf):
+            var lines: [String] = []
+            if wf.weightsMinutes > 0 {
+                let g   = String(format: "%.1f", wf.weightsMet * 3.5 * wf.weightKg / 200)
+                let res = String(format: "%.2f", wf.restingKcalPerMin)
+                let min = String(format: "%g",   wf.weightsMinutes)
+                let tot = formatThousands(Int(wf.weightsKcal.rounded()))
+                lines += ["Weights: (\(String(format: "%g", wf.weightsMet)) × 3.5 × \(String(format: "%.1f", wf.weightKg)) ÷ 200 − \(res)) × \(min) min",
+                          "= (\(g) − \(res)) × \(min) = \(tot) kcal"]
+            }
+            for (name, est) in wf.cardioEstimates {
+                if case .result(let r) = est {
+                    let min = String(format: "%.1f", r.minutes)
+                    let tot = formatThousands(Int(r.kcal.rounded()))
+                    lines.append("\(name): \(String(format: "%g", r.met)) MET × \(min) min = \(tot) kcal")
+                }
+            }
+            if !lines.isEmpty && wf.weightsMinutes > 0 && !wf.cardioEstimates.isEmpty {
+                lines.append("Total = \(formatThousands(Int(wf.totalKcal.rounded()))) kcal")
+            }
+            return lines.isEmpty ? ["No energy data"] : lines
+
+        case .cardioDay(let kcal, let w, let restPerMin):
+            let g   = String(format: "%.1f", 5.0 * 3.5 * w / 200)  // example MET
+            let res = String(format: "%.2f", restPerMin)
+            let tot = formatThousands(Int(kcal.rounded()))
+            return ["(MET × 3.5 × \(String(format: "%.1f", w)) kg ÷ 200 − \(res) resting) × min",
+                    "= \(tot) kcal total"]
+
+        case .singleCardio(let r, _):
+            let g   = String(format: "%.2f", r.met * 3.5 * r.weightKg / 200)
             let res = String(format: "%.2f", r.restingKcalPerMin)
-            let min = String(format: "%g",   r.minutes)
-            let net = String(format: "%.2f", r.kcal / max(r.minutes, 1))
+            let min = String(format: "%.1f", r.minutes)
             let tot = formatThousands(Int(r.kcal.rounded()))
-            return ["(\(r.met) × 3.5 × \(String(format: "%.1f", r.weightKg)) ÷ 200 − \(res) resting) × \(min) min",
+            return ["(\(String(format: "%g", r.met)) × 3.5 × \(String(format: "%.1f", r.weightKg)) ÷ 200 − \(res) resting) × \(min) min",
                     "= (\(g) − \(res)) × \(min) = \(tot) kcal"]
         }
     }
@@ -283,23 +353,27 @@ struct EnergyInfoSheetView: View {
         case .workoutsDay:      return "Workouts:"
         case .totalBurn:        return "Total:"
         case .singleWorkout:    return "This workout:"
+        case .cardioDay:        return "Cardio:"
+        case .singleCardio:     return "This session:"
         }
     }
 
     private var summaryValue: String {
         let kcal: Double
         switch content {
-        case .resting(let r, _):         kcal = r.kcalPerDay
-        case .everydayActivity(let restKcal, let pal, _, _): kcal = restKcal * (pal - 1)
-        case .workoutsDay(let wk, _, _, _, _): kcal = wk
-        case .totalBurn(let c):          kcal = c.totalKcal
-        case .singleWorkout(let r, _):   kcal = r.kcal
+        case .resting(let r, _):                              kcal = r.kcalPerDay
+        case .everydayActivity(let restKcal, let pal, _, _):  kcal = restKcal * (pal - 1)
+        case .workoutsDay(let wk, _, _, _, _):                kcal = wk
+        case .totalBurn(let c):                               kcal = c.totalKcal
+        case .singleWorkout(let wf):                          kcal = wf.totalKcal
+        case .cardioDay(let ck, _, _):                        kcal = ck
+        case .singleCardio(let r, _):                         kcal = r.kcal
         }
         let suffix: String
         switch content {
-        case .resting:       suffix = " a day."
-        case .singleWorkout: suffix = " above resting."
-        default:             suffix = "."
+        case .resting:                   suffix = " a day."
+        case .singleWorkout, .singleCardio: suffix = " above resting."
+        default:                         suffix = "."
         }
         return formatEnergyEstimateBoth(kcal) + suffix
     }
