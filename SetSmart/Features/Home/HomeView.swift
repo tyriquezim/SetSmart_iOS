@@ -25,11 +25,10 @@ struct HomeView: View {
         let todayStr = String.todayFoodDate()
         let slots = recentSessions
             .filter { localDayString(from: $0.startedAt) == todayStr }
-            .map { (startedAt: $0.startedAt, finishedAt: Optional($0.startedAt.addingTimeInterval($0.duration))) }
+            .map { $0.asSlot }
         return estimateDayEnergy(day: todayStr, workouts: slots, weights: allBodyWeights, profile: profile)
     }
 
-    // Formatter that converts a timestamptz Date → local calendar day string
     private static let localDayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -47,7 +46,7 @@ struct HomeView: View {
                     bodyWeightCard
                     foodTodayCard
                     if !routines.isEmpty { routinesSection }
-                    if !recentSessions.isEmpty { recentWorkoutsSection }
+                    recentWorkoutsSection
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -315,7 +314,7 @@ struct HomeView: View {
     private var recentWorkoutsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Recent Workouts")
+                Text("Recent Activity")
                     .font(.headline)
                     .foregroundStyle(Color.ssTextPrimary)
                 Spacer()
@@ -323,33 +322,48 @@ struct HomeView: View {
                     .font(.subheadline)
                     .foregroundStyle(Color.ssAccent)
             }
-            ForEach(recentSessions) { session in
-                CardView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(session.name)
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(Color.ssTextPrimary)
-                            Spacer()
-                            Text(session.startedAt, style: .date)
-                                .font(.caption)
-                                .foregroundStyle(Color.ssTextMuted)
-                        }
-                        HStack(spacing: 12) {
-                            Label(formatDuration(session.duration), systemImage: "clock")
-                            Label("\(session.setCount) sets", systemImage: "dumbbell.fill")
-                            if session.volumeKg > 0 {
-                                let vol = session.volumeKg * appState.weightUnit.kgFactor
-                                Label("\(Int(vol.rounded())) \(appState.weightUnit.label)", systemImage: "scalemass.fill")
-                            }
-                        }
-                        .font(.caption)
-                        .foregroundStyle(Color.ssTextSecondary)
-                    }
-                    .padding(16)
+
+            if recentSessions.isEmpty {
+                Text("No workouts logged yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.ssTextMuted)
+            } else {
+                ForEach(recentSessions) { session in
+                    CardView { recentWorkoutCard(session) }
                 }
             }
         }
+    }
+
+    private func recentWorkoutCard(_ session: WorkoutSessionSummary) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(session.name)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Color.ssTextPrimary)
+                Spacer()
+                Text(session.startedAt, style: .date)
+                    .font(.caption)
+                    .foregroundStyle(Color.ssTextMuted)
+            }
+            HStack(spacing: 12) {
+                Label(formatDuration(session.duration), systemImage: "clock")
+                if session.setCount > 0 {
+                    Label("\(session.setCount) sets", systemImage: "dumbbell.fill")
+                }
+                if !session.workoutCardio.isEmpty {
+                    let totalS = session.workoutCardio.reduce(0) { $0 + $1.durationS }
+                    Label(formatCardioTime(totalS), systemImage: "figure.run")
+                }
+                if session.volumeKg > 0 {
+                    let vol = session.volumeKg * appState.weightUnit.kgFactor
+                    Label("\(Int(vol.rounded())) \(appState.weightUnit.label)", systemImage: "scalemass.fill")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(Color.ssTextSecondary)
+        }
+        .padding(16)
     }
 
     // MARK: - Data loading
@@ -363,20 +377,20 @@ struct HomeView: View {
         async let bwList   = bwRepo.listBodyWeights()
         async let routL    = routineRepo.listRoutines()
 
-        todayLogs      = (try? await foodL) ?? []
-        targets        = try? await foodT
+        todayLogs = (try? await foodL) ?? []
+        targets   = try? await foodT
 
-        let allSessions  = (try? await sessions) ?? []
-        recentSessions   = Array(allSessions.prefix(3))
-        weekWorkoutDays  = Set(allSessions.map {
+        let allSessions = (try? await sessions) ?? []
+        recentSessions  = Array(allSessions.prefix(3))
+        weekWorkoutDays = Set(allSessions.map {
             Self.localDayFormatter.string(from: $0.startedAt)
         })
 
-        allBodyWeights   = (try? await bwList) ?? []
-        latestWeight     = allBodyWeights.last
-        hasWeightToday   = allBodyWeights.last?.measuredOn == todayStr
+        allBodyWeights = (try? await bwList) ?? []
+        latestWeight   = allBodyWeights.last
+        hasWeightToday = allBodyWeights.last?.measuredOn == todayStr
 
-        routines         = Array(((try? await routL) ?? []).prefix(4))
+        routines = Array(((try? await routL) ?? []).prefix(4))
     }
 
     // MARK: - Routine play

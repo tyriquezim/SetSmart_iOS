@@ -52,17 +52,19 @@ struct RoutineDetailView: View {
             VStack(spacing: 16) {
                 // Start button
                 VStack(spacing: 8) {
-                    let hasAnySets = routine.routineExercises.contains { !$0.sets.isEmpty }
+                    let hasAnySets   = routine.routineExercises.contains { !$0.sets.isEmpty }
+                    let hasAnyCardio = routine.routineExercises.contains { $0.isCardio }
+                    let canStart     = hasAnySets || hasAnyCardio
                     Button {
                         appState.startWorkout(from: routine)
                     } label: {
                         Label("Start workout", systemImage: "play.fill")
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(!hasAnySets)
+                    .disabled(!canStart)
 
-                    if !hasAnySets {
-                        Text("Add at least one exercise with a set to this routine first.")
+                    if !canStart {
+                        Text("Add at least one exercise or cardio activity to this routine first.")
                             .font(.caption)
                             .foregroundStyle(Color.ssTextMuted)
                             .multilineTextAlignment(.center)
@@ -78,9 +80,15 @@ struct RoutineDetailView: View {
                                     Text(re.exercise?.name ?? "Unknown")
                                         .font(.body.weight(.medium))
                                         .foregroundStyle(Color.ssTextPrimary)
-                                    Text("\(re.sets.count) set\(re.sets.count == 1 ? "" : "s") · \(formatRestSeconds(re.restSeconds))")
-                                        .font(.caption)
-                                        .foregroundStyle(Color.ssTextSecondary)
+                                    if re.isCardio {
+                                        Text(cardioSubtitle(re))
+                                            .font(.caption)
+                                            .foregroundStyle(Color.ssTextSecondary)
+                                    } else {
+                                        Text("\(re.sets.count) set\(re.sets.count == 1 ? "" : "s") · \(formatRestSeconds(re.restSeconds))")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.ssTextSecondary)
+                                    }
                                     if let notes = re.notes, !notes.isEmpty {
                                         Text(notes)
                                             .font(.caption)
@@ -108,6 +116,16 @@ struct RoutineDetailView: View {
             }
             .padding(16)
         }
+    }
+
+    private func cardioSubtitle(_ re: RoutineExercise) -> String {
+        guard let s = re.targetDurationS, s > 0 else { return "Cardio · No goal" }
+        let min = s / 60
+        if min >= 60 {
+            let h = min / 60; let m = min % 60
+            return "Cardio · Goal \(m == 0 ? "\(h) h" : "\(h) h \(m) min")"
+        }
+        return "Cardio · Goal \(min) min"
     }
 
     @MainActor

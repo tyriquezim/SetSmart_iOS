@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var errorMessage: String?
     @State private var showSignOutConfirm = false
     @State private var showForgotPassword = false
+    @State private var showDeleteAccount  = false
 
     // Body details
     @State private var heightCmInput  = ""
@@ -118,6 +119,32 @@ struct SettingsView: View {
                     .foregroundStyle(Color.ssDanger)
                     .listRowBackground(Color.ssSurface)
             }
+
+            // Delete account card — required by App Store Guideline 5.1.1(v)
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Delete account")
+                            .font(.headline)
+                            .foregroundStyle(Color.ssDanger)
+                        Text("Permanently delete your account and everything in it. This can't be undone.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.ssTextSecondary)
+                    }
+                    Button("Delete account…") { showDeleteAccount = true }
+                        .buttonStyle(DangerButtonStyle())
+                }
+                .padding(.vertical, 4)
+                .listRowBackground(
+                    Color.ssSurface
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.ssDanger.opacity(0.4), lineWidth: 1)
+                        )
+                )
+            }
+            .listRowBackground(Color.ssBackground)
         }
         .scrollContentBackground(.hidden)
         .background(Color.ssBackground.ignoresSafeArea())
@@ -137,6 +164,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordView()
+        }
+        .sheet(isPresented: $showDeleteAccount) {
+            DeleteAccountSheet()
         }
         .sheet(isPresented: $showFullExplanation) {
             FullExplanationSheet(energyUnit: appState.energyUnit)

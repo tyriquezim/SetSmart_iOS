@@ -55,6 +55,11 @@ struct WorkoutOutbox {
         loadAll().filter { $0.userId == userId }.count
     }
 
+    func deleteAll(for userId: UUID) {
+        let others = loadAll().filter { $0.userId != userId }
+        persist(others)
+    }
+
     private func loadAll() -> [WorkoutOutboxItem] {
         guard let data = try? Data(contentsOf: Self.url) else { return [] }
         return (try? Self.decoder.decode([WorkoutOutboxItem].self, from: data)) ?? []

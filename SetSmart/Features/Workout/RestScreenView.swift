@@ -3,10 +3,13 @@ import SwiftUI
 struct RestScreenView: View {
     @Environment(AppState.self) private var appState
 
-    private var workout: WorkoutState { appState.activeWorkout! }
+    @State private var alarmRinging = false
+    @State private var ringPulse    = false
+
+    private var workout: WorkoutState? { appState.activeWorkout }
     private var endsAt: Date {
-        if case .rest(_, let e) = workout.phase { return e }
-        return .now
+        guard let w = workout, case .rest(_, let e) = w.phase else { return .now }
+        return e
     }
 
     var body: some View {
@@ -16,17 +19,38 @@ struct RestScreenView: View {
             VStack(spacing: 32) {
                 Spacer()
                 countdownRing
-                adjustButtons
-                skipButton
-                if let next = workout.nextSetInfo {
-                    upNext(next)
-                }
+                if !alarmRinging { adjustButtons }
+                actionButton
+                if let next = workout?.nextSetInfo { upNext(next) }
                 Spacer()
             }
             .padding(.horizontal, 24)
         }
         .background(Color.ssBackground)
+        .onChange(of: alarmRinging) { _, ringing in
+            if ringing {
+                withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                    ringPulse = true
+                }
+            } else {
+                withAnimation(.spring) { ringPulse = false }
+            }
+        }
+        .onAppear {
+            // Restart alarm if the view reappears after rest already ended (e.g. after minimising)
+            if endsAt.timeIntervalSinceNow <= 0 && !alarmRinging {
+                alarmRinging = true
+                AlarmService.shared.playLooping()
+            }
+        }
+        .onDisappear {
+            AlarmService.shared.stop()
+            alarmRinging = false
+            ringPulse    = false
+        }
     }
+
+    // MARK: - Subviews
 
     private var headerRow: some View {
         HStack {
@@ -36,7 +60,7 @@ struct RestScreenView: View {
                     .foregroundStyle(Color.ssTextSecondary)
             }
             Spacer()
-            Text("Rest")
+            Text(alarmRinging ? "Rest Over" : "Rest")
                 .font(.headline)
             Spacer()
             Image(systemName: "chevron.down").opacity(0)
@@ -54,32 +78,65 @@ struct RestScreenView: View {
     private func ringFrame(at date: Date) -> some View {
         let remaining = max(0, endsAt.timeIntervalSince(date))
         let total: Double = {
-            if case .rest(let s, _) = workout.phase { return endsAt.timeIntervalSince(s) }
-            return 60
+            guard let w = workout, case .rest(let s, _) = w.phase else { return 60 }
+            return endsAt.timeIntervalSince(s)
         }()
-        let fraction = total > 0 ? remaining / total : 0.0
+        let fraction  = total > 0 ? remaining / total : 0.0
+        let ringColor = alarmRinging ? Color.ssWarning : Color.ssAccent
 
         ZStack {
             Circle()
-                .stroke(Color.ssBorder, lineWidth: 8)
+                .stroke(
+                    alarmRinging ? Color.ssWarning.opacity(0.25) : Color.ssBorder,
+                    lineWidth: 8
+                )
             Circle()
-                .trim(from: 0, to: fraction)
-                .stroke(Color.ssAccent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                .trim(from: 0, to: alarmRinging ? 1.0 : fraction)
+                .stroke(ringColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.linear(duration: 0.1), value: fraction)
             VStack(spacing: 4) {
-                Text(formatRemaining(remaining))
+                Text(alarmRinging ? "0:00" : formatRemaining(remaining))
                     .font(.system(size: 56, weight: .bold, design: .monospaced))
-                Text("seconds left")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.ssTextSecondary)
+                    .foregroundStyle(alarmRinging ? Color.ssWarning : Color.ssTextPrimary)
+                Text(alarmRinging ? "REST OVER" : "seconds left")
+                    .font(.subheadline.weight(alarmRinging ? .bold : .regular))
+                    .foregroundStyle(alarmRinging ? Color.ssWarning : Color.ssTextSecondary)
+                    .tracking(alarmRinging ? 1.5 : 0)
             }
         }
         .frame(width: 220, height: 220)
+        .scaleEffect(ringPulse ? 1.04 : 1.0)
         .onChange(of: remaining == 0) { _, isZero in
-            if isZero {
-                AlarmService.shared.play()
-                appState.applyWorkoutAction(.endRest)
+            if isZero, !alarmRinging {
+                // Stay on this screen — user must tap to advance
+                alarmRinging = true
+                AlarmService.shared.playLooping()
+            } else if !isZero, alarmRinging {
+                // User extended rest via +button
+                alarmRinging = false
+                AlarmService.shared.stop()
+            }
+        }
+    }
+
+    // "Skip Rest" while counting, large "Start Next Set" button when alarm is ringing
+    @ViewBuilder
+    private var actionButton: some View {
+        if alarmRinging {
+            Button { endRest() } label: {
+                Text("Start Next Set")
+                    .font(.title3.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .scaleEffect(ringPulse ? 1.04 : 1.0)
+        } else {
+            Button { endRest() } label: {
+                Text("Skip Rest")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.ssAccent)
             }
         }
     }
@@ -106,14 +163,6 @@ struct RestScreenView: View {
         }
     }
 
-    private var skipButton: some View {
-        Button { appState.applyWorkoutAction(.endRest) } label: {
-            Text("Skip Rest")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.ssAccent)
-        }
-    }
-
     private func upNext(_ info: CurrentSetInfo) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Up next")
@@ -137,6 +186,12 @@ struct RestScreenView: View {
         .background(Color.ssSurface)
         .cornerRadius(12)
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.ssBorder, lineWidth: 1))
+    }
+
+    private func endRest() {
+        AlarmService.shared.stop()
+        alarmRinging = false
+        appState.applyWorkoutAction(.endRest)
     }
 
     private func formatRemaining(_ t: TimeInterval) -> String {

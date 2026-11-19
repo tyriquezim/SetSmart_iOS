@@ -7,34 +7,40 @@ struct SetScreenView: View {
     @State private var weight: Double = 0
     @State private var showDiscard    = false
 
-    private var workout: WorkoutState { appState.activeWorkout! }
-    private var currentIdx: Int? { workout.queue.first }
-    private var currentEx: WorkoutExercise? { currentIdx.map { workout.exercises[$0] } }
-    private var info: CurrentSetInfo? { workout.currentSet }
+    private var workout: WorkoutState? { appState.activeWorkout }
+    private var currentIdx: Int? { workout?.queue.first }
+    private var currentEx: WorkoutExercise? {
+        guard let idx = currentIdx, let w = workout else { return nil }
+        return w.exercises[idx]
+    }
+    private var info: CurrentSetInfo? { workout?.currentSet }
     private var unit: WeightUnit { appState.weightUnit }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                headerRow.padding(.horizontal)
-                Divider().background(Color.ssBorder)
-                ScrollView {
-                    VStack(spacing: 24) {
-                        exerciseTitle
-                        setCountRow
-                        stepperSection
-                        logButton
-                        loggedSetsList
+            // Guard: activeWorkout is nil during the transition after discardWorkout()
+            if let workout = appState.activeWorkout {
+                VStack(spacing: 0) {
+                    headerRow(workout: workout).padding(.horizontal)
+                    Divider().background(Color.ssBorder)
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            exerciseTitle
+                            setCountRow(workout: workout)
+                            stepperSection
+                            logButton
+                            loggedSetsList
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 24)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
                 }
+                .background(Color.ssBackground)
+                .navigationBarHidden(true)
             }
-            .background(Color.ssBackground)
-            .navigationBarHidden(true)
         }
         .onAppear { prefill() }
-        .onChange(of: workout.queue.first) { prefill() }
+        .onChange(of: appState.activeWorkout?.queue.first) { _, _ in prefill() }
         .confirmationDialog("Discard workout?", isPresented: $showDiscard, titleVisibility: .visible) {
             Button("Discard", role: .destructive) { appState.discardWorkout() }
             Button("Cancel", role: .cancel) {}
@@ -45,7 +51,7 @@ struct SetScreenView: View {
 
     // MARK: - Subviews
 
-    private var headerRow: some View {
+    private func headerRow(workout: WorkoutState) -> some View {
         HStack {
             Button { appState.isWorkoutPlayerVisible = false } label: {
                 Image(systemName: "chevron.down")
@@ -82,7 +88,7 @@ struct SetScreenView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var setCountRow: some View {
+    private func setCountRow(workout: WorkoutState) -> some View {
         HStack {
             if let ex = currentEx {
                 let logged = ex.logged.count

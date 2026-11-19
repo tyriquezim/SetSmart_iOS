@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import SetSmart
 
 // MARK: - Helpers
@@ -6,15 +7,14 @@ import Testing
 private func makeRoutine(restSeconds: Int = 60, sets: [PlannedSet]? = nil) -> Routine {
     let plannedSets = sets ?? [PlannedSet(reps: 8, weightKg: 100)]
     let ex = RoutineExercise(
-        id: 1,
-        position: 0,
         exerciseId: UUID(),
-        notes: nil,
+        position: 0,
         restSeconds: restSeconds,
         sets: plannedSets,
+        notes: nil,
         exercise: Exercise(
-            id: UUID(), name: "Bench Press", muscleGroup: .chest,
-            equipment: .barbell, notes: nil, ownerId: nil, archivedAt: nil
+            id: UUID(), ownerId: nil, name: "Bench Press", kind: .weights,
+            muscleGroup: .chest, equipment: .barbell, archivedAt: nil
         )
     )
     return Routine(
@@ -314,7 +314,7 @@ struct EnergyEstimatesTests {
         guard case .result(let c) = result else {
             Issue.record("Expected .result, got missing"); return
         }
-        #expect(abs(c.totalKcal - (c.restingKcal + c.everydayKcal + c.workoutKcal)) < 0.001)
+        #expect(abs(c.totalKcal - (c.restingKcal + c.everydayKcal + c.workoutKcal + c.cardioKcal)) < 0.001)
     }
 
     @Test("estimateDayEnergy: .missing(.weight) when no weights")
@@ -391,4 +391,214 @@ struct FlexDoubleTests {
         let w = try JSONDecoder().decode(Wrapper.self, from: json)
         #expect(abs((w.v.value ?? 0) - 2.72) < 0.001)
     }
+}
+
+// MARK: - Cardio tests
+
+@Suite("Cardio")
+struct CardioTests {
+
+    // Profile: male, 180 cm, 30 y, 80 kg → resting 1780 kcal
+    private let profile = Profile(
+        id: UUID(), displayName: nil, weightUnit: .kg, energyUnit: .kj,
+        heightCm: 180, birthYear: 1996, sex: .male, dailyActivity: .mixed, workoutEffort: .moderate
+    )
+    private let weights: [BodyWeight] = [
+        BodyWeight(id: UUID(), measuredOn: "2026-11-01", weightKg: 80, bodyFatPct: nil, note: nil)
+    ]
+
+    // MARK: Speed rows
+
+    @Test("run 10 km in 50 min → code 12080, 11.8 METs")
+    func runSpeedRow() {
+        guard case .speed(let row, let speedKmh) = cardioMet(
+            activity: .run, customMet: nil, durationS: 3000, distanceM: 10000, effort: nil
+        ) else {
+            Issue.record("Expected speed source"); return
+        }
+        #expect(row.code == 12080)
+        #expect(abs(row.met - 11.8) < 0.01)
+        #expect(abs(speedKmh - 12.0) < 0.1)
+    }
+
+    @Test("run below table minimum → code 12028, 6.5 METs")
+    func runBelowTable() {
+        guard case .speed(let row, _) = cardioMet(
+            activity: .run, customMet: nil, durationS: 3000, distanceM: 4000, effort: nil
+        ) else {
+            Issue.record("Expected speed source"); return
+        }
+        #expect(row.code == 12028)
+        #expect(abs(row.met - 6.5) < 0.01)
+    }
+
+    @Test("ride 30 km in 60 min (18.6 mph) → 12.0 METs (01050)")
+    func rideMidTable() {
+        guard case .speed(let row, _) = cardioMet(
+            activity: .cycle, customMet: nil, durationS: 3600, distanceM: 30000, effort: nil
+        ) else {
+            Issue.record("Expected speed source"); return
+        }
+        #expect(row.code == 01050)
+        #expect(abs(row.met - 12.0) < 0.01)
+    }
+
+    @Test("walk 5 km in 60 min (3.1 mph) → 3.8 METs (17190)")
+    func walkSpeedRow() {
+        guard case .speed(let row, _) = cardioMet(
+            activity: .walk, customMet: nil, durationS: 3600, distanceM: 5000, effort: nil
+        ) else {
+            Issue.record("Expected speed source"); return
+        }
+        #expect(row.code == 17190)
+        #expect(abs(row.met - 3.8) < 0.01)
+    }
+
+    // MARK: Effort rows
+
+    @Test("run without distance, effort light → 7.5 METs, not defaulted")
+    func runEffortLight() {
+        guard case .effort(let row, let defaulted) = cardioMet(
+            activity: .run, customMet: nil, durationS: 1800, distanceM: nil, effort: .light
+        ) else {
+            Issue.record("Expected effort source"); return
+        }
+        #expect(abs(row.met - 7.5) < 0.01)
+        #expect(!defaulted)
+    }
+
+    @Test("walk with no effort → defaults to moderate 4.8 METs")
+    func walkNoEffort() {
+        guard case .effort(let row, let defaulted) = cardioMet(
+            activity: .walk, customMet: nil, durationS: 1800, distanceM: nil, effort: nil
+        ) else {
+            Issue.record("Expected effort source"); return
+        }
+        #expect(abs(row.met - 4.8) < 0.01)
+        #expect(defaulted)
+    }
+
+    @Test("row with effort light (not offered) falls back to moderate 5.0 METs")
+    func rowNotOfferedEffort() {
+        guard case .effort(let row, _) = cardioMet(
+            activity: .row, customMet: nil, durationS: 1800, distanceM: nil, effort: .light
+        ) else {
+            Issue.record("Expected effort source"); return
+        }
+        #expect(abs(row.met - 5.0) < 0.01)
+    }
+
+    @Test("stairs → 9.3 METs (single option)")
+    func stairsEffort() {
+        guard case .effort(let row, _) = cardioMet(
+            activity: .stairs, customMet: nil, durationS: 1800, distanceM: nil, effort: nil
+        ) else {
+            Issue.record("Expected effort source"); return
+        }
+        #expect(abs(row.met - 9.3) < 0.01)
+    }
+
+    @Test("swim with 1500 m and vigorous → 9.8 METs (distance ignored)")
+    func swimDistanceIgnored() {
+        guard case .effort(let row, _) = cardioMet(
+            activity: .swim, customMet: nil, durationS: 1800, distanceM: 1500, effort: .vigorous
+        ) else {
+            Issue.record("Expected effort source"); return
+        }
+        #expect(abs(row.met - 9.8) < 0.01)
+    }
+
+    @Test("other with met 5.5 → custom 5.5")
+    func otherCustomMet() {
+        guard case .custom(let m) = cardioMet(
+            activity: .other, customMet: 5.5, durationS: 1800, distanceM: nil, effort: nil
+        ) else {
+            Issue.record("Expected custom source"); return
+        }
+        #expect(abs(m - 5.5) < 0.01)
+    }
+
+    @Test("other with no met → nil")
+    func otherNoMet() {
+        #expect(cardioMet(activity: .other, customMet: nil, durationS: 1800, distanceM: nil, effort: nil) == nil)
+    }
+
+    // MARK: netActivityKcal
+
+    @Test("netActivityKcal never negative")
+    func netActivityNonNegative() {
+        let result = netActivityKcal(met: 1, minutes: 30, weightKg: 60, restingKcalPerDay: 2000)
+        #expect(result >= 0)
+        #expect(result == 0)
+    }
+
+    // MARK: Energy
+
+    @Test("run 10 km in 50 min → ≈ 764.19 kcal")
+    func runEnergy() {
+        guard case .result(let r) = estimateCardioEnergy(
+            activity: .run, customMet: nil, durationS: 3000, distanceM: 10000,
+            effort: nil, startedAt: date("2026-11-19T08:00:00Z"),
+            weights: weights, profile: profile
+        ) else {
+            Issue.record("Expected result"); return
+        }
+        #expect(abs(r.kcal - 764.19) < 1.0)
+        #expect(abs(r.minutes - 50.0) < 0.01)
+    }
+
+    @Test("missing weight → missing result")
+    func missingWeight() {
+        let emptyWeights: [BodyWeight] = []
+        guard case .missing(let m) = estimateCardioEnergy(
+            activity: .run, customMet: nil, durationS: 1800, distanceM: 5000,
+            effort: nil, startedAt: date("2026-11-19T08:00:00Z"),
+            weights: emptyWeights, profile: profile
+        ) else {
+            Issue.record("Expected missing"); return
+        }
+        #expect(m.contains(.weight))
+    }
+
+    @Test("other without MET → missing [.met]")
+    func otherMissingMet() {
+        guard case .missing(let m) = estimateCardioEnergy(
+            activity: .other, customMet: nil, durationS: 1800, distanceM: nil,
+            effort: nil, startedAt: date("2026-11-19T08:00:00Z"),
+            weights: weights, profile: profile
+        ) else {
+            Issue.record("Expected missing"); return
+        }
+        #expect(m == [.met])
+    }
+
+    // MARK: Activity helpers
+
+    @Test("every activity appears in displayOrder")
+    func allActivitiesInDisplayOrder() {
+        let ordered = CardioActivity.displayOrder
+        for act in CardioActivity.allCases {
+            #expect(ordered.contains(act))
+        }
+        #expect(ordered.count == CardioActivity.allCases.count)
+    }
+
+    @Test("every non-other activity has at least one effort option")
+    func effortOptionsExist() {
+        for act in CardioActivity.allCases where act != .other {
+            #expect(!effortOptions(for: act).isEmpty, "Missing effort options for \(act)")
+        }
+    }
+
+    @Test("CardioActivity.indoor_cycle has label 'Exercise bike'")
+    func indoorCycleLabel() {
+        #expect(CardioActivity.indoor_cycle.label == "Exercise bike")
+    }
+}
+
+// MARK: - Cardio test helpers
+
+private func date(_ iso: String) -> Date {
+    let f = ISO8601DateFormatter()
+    return f.date(from: iso) ?? .now
 }

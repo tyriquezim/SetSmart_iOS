@@ -3,22 +3,22 @@ import SwiftUI
 struct HistoryView: View {
     @Environment(AppState.self) private var appState
 
-    @State private var sessions: [WorkoutSessionSummary] = []
+    @State private var workouts: [WorkoutSessionSummary] = []
     @State private var allBodyWeights: [BodyWeight] = []
+    @State private var workoutLimit = 20
+    @State private var lastWorkoutCount = 0
     @State private var isLoading = false
-    @State private var canLoadMore = true
-    @State private var errorMessage: String?
 
-    private let repo   = WorkoutRepository()
-    private let bwRepo = BodyWeightRepository()
+    private let workoutRepo = WorkoutRepository()
+    private let bwRepo      = BodyWeightRepository()
 
     var body: some View {
         NavigationStack {
             Group {
-                if sessions.isEmpty && isLoading {
+                if workouts.isEmpty && isLoading {
                     ProgressView().tint(Color.ssAccent)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if sessions.isEmpty && !isLoading {
+                } else if workouts.isEmpty && !isLoading {
                     emptyState
                 } else {
                     list
@@ -26,27 +26,33 @@ struct HistoryView: View {
             }
             .background(Color.ssBackground.ignoresSafeArea())
             .navigationTitle("History")
+            .navigationDestination(for: WorkoutSessionSummary.self) { session in
+                HistoryDetailView(session: session)
+            }
         }
         .task {
-            await loadNext()
-            if let weights = try? await bwRepo.listBodyWeights() {
-                allBodyWeights = weights
-            }
+            isLoading = true
+            async let w  = workoutRepo.fetchHistory(limit: workoutLimit)
+            async let bw = bwRepo.listBodyWeights()
+            workouts       = (try? await w)  ?? []
+            allBodyWeights = (try? await bw) ?? []
+            lastWorkoutCount = workouts.count
+            isLoading        = false
         }
     }
 
     private var list: some View {
         List {
-            ForEach(sessions) { session in
-                NavigationLink(destination: HistoryDetailView(session: session)) {
-                    sessionRow(session)
+            ForEach(workouts) { session in
+                NavigationLink(value: session) {
+                    workoutRow(session)
                 }
                 .listRowBackground(Color.ssSurface)
                 .listRowSeparatorTint(Color.ssBorder)
             }
 
-            if canLoadMore {
-                Button("Load more") { Task { await loadNext() } }
+            if lastWorkoutCount == workoutLimit {
+                Button("Load more") { Task { await loadMore() } }
                     .foregroundStyle(Color.ssAccent)
                     .listRowBackground(Color.ssBackground)
             }
@@ -61,10 +67,10 @@ struct HistoryView: View {
             Image(systemName: "clock.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(Color.ssTextMuted)
-            Text("No workouts yet")
+            Text("Nothing logged yet")
                 .font(.headline)
                 .foregroundStyle(Color.ssTextMuted)
-            Text("Complete your first workout to see it here.")
+            Text("Finish a workout and it'll show up here.")
                 .font(.subheadline)
                 .foregroundStyle(Color.ssTextMuted)
                 .multilineTextAlignment(.center)
@@ -73,8 +79,10 @@ struct HistoryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func sessionRow(_ s: WorkoutSessionSummary) -> some View {
-        let energy = sessionWorkoutEnergy(s)
+    // MARK: - Workout row
+
+    private func workoutRow(_ s: WorkoutSessionSummary) -> some View {
+        let energy = sessionEnergy(s)
         return VStack(alignment: .leading, spacing: 4) {
             Text(s.name)
                 .font(.body.weight(.semibold))
@@ -82,14 +90,21 @@ struct HistoryView: View {
                 .font(.subheadline)
                 .foregroundStyle(Color.ssTextSecondary)
             HStack(spacing: 8) {
-                Label("\(s.setCount) sets", systemImage: "dumbbell.fill")
-                if s.volumeKg > 0 {
-                    Label(String(format: "%g kg", s.volumeKg), systemImage: "scalemass.fill")
+                if s.setCount > 0 {
+                    Label("\(s.setCount) sets", systemImage: "dumbbell.fill")
+                    if s.volumeKg > 0 {
+                        Label(String(format: "%g kg", s.volumeKg), systemImage: "scalemass.fill")
+                    }
                 }
-                if let (wr, rr) = energy {
+                if !s.workoutCardio.isEmpty {
+                    let totalCardioS = s.workoutCardio.reduce(0) { $0 + $1.durationS }
+                    Label("\(s.workoutCardio.count) cardio · \(formatCardioTime(totalCardioS))",
+                          systemImage: "figure.run")
+                }
+                if let wf = energy {
                     Text("·")
-                    Text(formatEnergyEstimate(wr.kcal, unit: appState.energyUnit))
-                    InfoButton(content: .singleWorkout(wr, restingResult: rr), unit: appState.energyUnit)
+                    Text(formatEnergyEstimate(wf.totalKcal, unit: appState.energyUnit))
+                    InfoButton(content: .singleWorkout(wf), unit: appState.energyUnit)
                 }
             }
             .font(.caption)
@@ -98,37 +113,28 @@ struct HistoryView: View {
         .padding(.vertical, 4)
     }
 
-    private func sessionWorkoutEnergy(_ s: WorkoutSessionSummary) -> (WorkoutEnergyResult, RestingEnergyResult)? {
-        guard let profile   = appState.profile,
-              let finishedAt = s.finishedAt,
-              !allBodyWeights.isEmpty
-        else { return nil }
-        let dayStr = localDayString(from: s.startedAt)
-        guard let stats   = bodyStatsOn(day: dayStr, weights: allBodyWeights, profile: profile),
-              let resting = restingEnergy(stats: stats)
-        else { return nil }
-        let wr = workoutEnergyFor(startedAt: s.startedAt, finishedAt: finishedAt, stats: stats)
-        return (wr, resting)
+    private func sessionEnergy(_ s: WorkoutSessionSummary) -> WorkoutEnergyFull? {
+        guard let profile = appState.profile, !allBodyWeights.isEmpty else { return nil }
+        return estimateWorkoutEnergy(slot: s.asSlot, weights: allBodyWeights, profile: profile)
     }
+
+    // MARK: - Loading
 
     private func reload() async {
-        sessions = []
-        canLoadMore = true
-        await loadNext()
+        workoutLimit = 20
+        isLoading    = true
+        async let w  = workoutRepo.fetchHistory(limit: workoutLimit)
+        async let bw = bwRepo.listBodyWeights()
+        workouts       = (try? await w)  ?? []
+        allBodyWeights = (try? await bw) ?? []
+        lastWorkoutCount = workouts.count
+        isLoading        = false
     }
 
-    private func loadNext() async {
-        guard !isLoading, canLoadMore else { return }
-        isLoading = true
-        errorMessage = nil
-        do {
-            let before = sessions.last?.startedAt
-            let batch  = try await repo.fetchHistory(limit: 20, before: before)
-            sessions.append(contentsOf: batch)
-            canLoadMore = batch.count == 20
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isLoading = false
+    private func loadMore() async {
+        workoutLimit += 20
+        async let w  = workoutRepo.fetchHistory(limit: workoutLimit)
+        workouts         = (try? await w) ?? workouts
+        lastWorkoutCount = workouts.count
     }
 }

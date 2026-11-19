@@ -2,6 +2,24 @@ import Observation
 import Foundation
 import Supabase
 
+// MARK: - Delete account errors
+
+enum DeleteAccountError: LocalizedError {
+    case wrongPassword
+    case rpcFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .wrongPassword:
+            return "That password is incorrect."
+        case .rpcFailed(let msg):
+            return "Your account couldn't be deleted, and nothing was removed. Please try again. (\(msg))"
+        }
+    }
+}
+
+// MARK: - AppState
+
 @Observable
 final class AppState {
     var session: Session?
@@ -18,6 +36,9 @@ final class AppState {
     // MARK: - Workout Player
     var activeWorkout: WorkoutState?
     var isWorkoutPlayerVisible = false
+
+    // MARK: - One-time notices (in memory only, not persisted)
+    var deletionNotice: String? = nil
 
     private let client = SupabaseClientProvider.shared
     private let profileRepo = ProfileRepository()
@@ -111,6 +132,40 @@ final class AppState {
         profile = updated
     }
 
+    // MARK: - Delete account
+
+    @MainActor
+    func deleteAccount(password: String) async throws {
+        guard let email = session?.user.email else { return }
+
+        // 1. Re-verify the password
+        do {
+            try await client.auth.signIn(email: email, password: password)
+        } catch {
+            throw DeleteAccountError.wrongPassword
+        }
+
+        // 2. Call the RPC — deletes all user data in one transaction
+        do {
+            try await client.rpc("delete_my_account").execute()
+        } catch {
+            throw DeleteAccountError.rpcFailed(error.localizedDescription)
+        }
+
+        // 3. Cancel notifications and clear all local state
+        let userId = session?.user.id
+        NotificationService.shared.cancel()
+        persistence.delete()
+        if let uid = userId { outbox.deleteAll(for: uid) }
+        WorkoutSettings.shared.reset()
+
+        // 4. Sign out locally — the server session no longer exists
+        try? await client.auth.signOut(scope: .local)
+
+        // 5. Leave a one-time notice for the sign-in screen
+        deletionNotice = "Your account and all its data have been deleted."
+    }
+
     // MARK: - Workout management
 
     @MainActor
@@ -147,7 +202,7 @@ final class AppState {
         if let userId = session?.user.id {
             persistence.save(activeWorkout!, userId: userId)
         }
-        // Schedule / cancel rest-end notification
+        // Schedule / cancel notifications
         switch activeWorkout!.phase {
         case .rest(_, let endsAt):
             let nextSet: String? = {
@@ -157,6 +212,22 @@ final class AppState {
                 return "\(ex.name) · Set \(setNum) of \(ex.sets.count)"
             }()
             NotificationService.shared.scheduleRestEnd(at: endsAt, nextSet: nextSet)
+            NotificationService.shared.cancelCardioGoal()
+        case .cardio(let t) where t.isRunning:
+            NotificationService.shared.cancel()
+            if let runningSince = t.runningSince,
+               let plan = activeWorkout!.exercises[t.exerciseIndex].cardio,
+               let goalS = plan.targetDurationS, goalS > 0 {
+                let remainingMs = Double(goalS) * 1000 - t.accumulatedMs
+                if remainingMs > 0 {
+                    let fireDate = runningSince.addingTimeInterval(remainingMs / 1000)
+                    let goalMin  = max(1, goalS / 60)
+                    let name     = activeWorkout!.exercises[t.exerciseIndex].name
+                    NotificationService.shared.scheduleCardioGoal(at: fireDate,
+                                                                  exerciseName: name,
+                                                                  goalMin: goalMin)
+                }
+            }
         default:
             NotificationService.shared.cancel()
         }

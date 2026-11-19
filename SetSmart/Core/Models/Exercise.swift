@@ -1,22 +1,35 @@
 import Foundation
 
+enum ExerciseKind: String, Codable, CaseIterable, Sendable {
+    case weights = "weights"
+    case cardio  = "cardio"
+}
+
 struct Exercise: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     let ownerId: UUID?
     var name: String
+    var kind: ExerciseKind
     var muscleGroup: MuscleGroup
     var equipment: Equipment
+    var cardioActivity: CardioActivity?
+    var cardioMet: Double?
     var archivedAt: Date?
 
-    var isBuiltIn: Bool { ownerId == nil }
+    var isBuiltIn: Bool  { ownerId == nil }
+    var isCardio:  Bool  { kind == .cardio }
+    var isWeights: Bool  { kind == .weights }
 
     enum CodingKeys: String, CodingKey {
         case id
-        case ownerId     = "owner_id"
+        case ownerId        = "owner_id"
         case name
-        case muscleGroup = "muscle_group"
+        case kind
+        case muscleGroup    = "muscle_group"
         case equipment
-        case archivedAt  = "archived_at"
+        case cardioActivity = "cardio_activity"
+        case cardioMet      = "cardio_met"
+        case archivedAt     = "archived_at"
     }
 }
 
@@ -33,8 +46,15 @@ enum MuscleGroup: String, Codable, CaseIterable, Identifiable, Sendable {
     case calves     = "Calves"
     case core       = "Core"
     case fullBody   = "Full body"
+    case cardio     = "Cardio"
 
     var id: String { rawValue }
+
+    // Only shown in the weights exercise form
+    static var weightsGroups: [MuscleGroup] {
+        [.chest, .back, .shoulders, .biceps, .triceps, .forearms,
+         .quads, .hamstrings, .glutes, .calves, .core, .fullBody]
+    }
 }
 
 enum Equipment: String, Codable, CaseIterable, Sendable {
@@ -47,4 +67,9 @@ enum Equipment: String, Codable, CaseIterable, Sendable {
     case bodyweight   = "Bodyweight"
     case band         = "Band"
     case other        = "Other"
+    // Cardio-specific built-in equipment
+    case treadmill    = "Treadmill"
+    case outdoors     = "Outdoors"
+    case bike         = "Bike"
+    case pool         = "Pool"
 }

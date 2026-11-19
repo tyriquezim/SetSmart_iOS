@@ -8,6 +8,7 @@ extension WorkoutState {
             guard case .set = phase, !queue.isEmpty else { return }
             let idx = queue[0]
             var ex  = exercises[idx]
+            guard !ex.isCardio else { return }  // ignored for cardio
 
             let targetIdx = ex.sets.isEmpty ? 0 : min(ex.logged.count, ex.sets.count - 1)
             let target    = ex.sets.isEmpty
@@ -26,14 +27,12 @@ extension WorkoutState {
                 performedOrder.append(idx)
             }
 
-            // Mark done and remove from queue only when all sets are finished.
             if ex.logged.count >= ex.sets.count {
                 ex.status = .done
                 queue.removeFirst()
             }
             exercises[idx] = ex
 
-            // Rest starts after every logged set, not only when an exercise is fully done.
             if queue.isEmpty {
                 phase      = .complete
                 finishedAt = now
@@ -55,7 +54,9 @@ extension WorkoutState {
             phase = .rest(startedAt: s, endsAt: max(now, e.addingTimeInterval(Double(delta))))
 
         case .postpone(let mode):
-            guard phase != .complete, queue.count >= 2 else { return }
+            guard phase != .complete,
+                  if case .cardio = phase { false } else { true },
+                  queue.count >= 2 else { return }
             switch mode {
             case .next: queue.swapAt(0, 1)
             case .end:  queue.append(queue.removeFirst())
@@ -64,8 +65,10 @@ extension WorkoutState {
         case .skipExercise:
             guard !queue.isEmpty else { return }
             let idx = queue[0]
-            exercises[idx].status = exercises[idx].logged.isEmpty ? .skipped : .done
+            exercises[idx].status = exercises[idx].logged.isEmpty && exercises[idx].cardioLog == nil
+                ? .skipped : .done
             queue.removeFirst()
+            if case .cardio = phase { phase = .set }
             if queue.isEmpty {
                 phase      = .complete
                 finishedAt = now
@@ -76,6 +79,7 @@ extension WorkoutState {
         case .addSet:
             guard !queue.isEmpty else { return }
             let idx  = queue[0]
+            guard !exercises[idx].isCardio else { return }
             let last = exercises[idx].sets.last ?? PlannedSet(reps: 10, weightKg: nil)
             exercises[idx].sets.append(last)
 
@@ -93,6 +97,77 @@ extension WorkoutState {
             guard phase == .complete, !queue.isEmpty else { return }
             phase      = .set
             finishedAt = nil
+
+        // MARK: - Cardio timer actions
+
+        case .startCardio:
+            guard case .set = phase, !queue.isEmpty else { return }
+            let idx = queue[0]
+            guard exercises[idx].isCardio else { return }
+            phase = .cardio(CardioTimer(
+                exerciseIndex: idx,
+                startedAt:     now,
+                accumulatedMs: 0,
+                runningSince:  now,
+                endedAt:       nil
+            ))
+
+        case .pauseCardio:
+            guard case .cardio(var t) = phase, t.isRunning else { return }
+            t.accumulatedMs += now.timeIntervalSince(t.runningSince!) * 1000
+            t.runningSince   = nil
+            phase = .cardio(t)
+
+        case .resumeCardio:
+            guard case .cardio(var t) = phase, !t.isRunning else { return }
+            t.runningSince = now
+            t.endedAt      = nil
+            phase = .cardio(t)
+
+        case .endCardio:
+            guard case .cardio(var t) = phase, !t.hasEnded else { return }
+            if let rs = t.runningSince {
+                t.accumulatedMs += now.timeIntervalSince(rs) * 1000
+            }
+            t.runningSince = nil
+            t.endedAt      = now
+            phase = .cardio(t)
+
+        case .cancelCardio:
+            guard case .cardio = phase else { return }
+            phase = .set
+
+        case .logCardio(let durationS, let distanceM, let effort):
+            guard case .cardio(let t) = phase, t.hasEnded else { return }
+            let idx = t.exerciseIndex
+            guard idx < exercises.count else { return }
+            let clampedDuration = max(1, min(86400, durationS))
+            exercises[idx].cardioLog = LoggedCardio(
+                startedAt:   t.startedAt,
+                durationS:   clampedDuration,
+                distanceM:   distanceM.flatMap { $0 > 0 ? $0 : nil },
+                effort:      effort,
+                completedAt: now
+            )
+            exercises[idx].status = .done
+            queue.removeFirst()
+            if !performedOrder.contains(idx) {
+                performedOrder.append(idx)
+            }
+            if queue.isEmpty {
+                phase      = .complete
+                finishedAt = now
+            } else {
+                phase = .set  // no rest after cardio
+            }
         }
+    }
+}
+
+// Helper: disambiguate the if-let guard pattern for phase check
+private extension Phase {
+    var isCardio: Bool {
+        if case .cardio = self { return true }
+        return false
     }
 }

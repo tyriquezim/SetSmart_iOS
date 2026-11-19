@@ -7,7 +7,7 @@ struct HistoryDetailView: View {
 
     @State private var detail: WorkoutSession?
     @State private var allBodyWeights: [BodyWeight] = []
-    @State private var isLoading = false
+    @State private var isLoading = true
     @State private var errorMessage: String?
 
     private let repo   = WorkoutRepository()
@@ -17,9 +17,6 @@ struct HistoryDetailView: View {
         Group {
             if let detail {
                 content(detail)
-            } else if isLoading {
-                ProgressView().tint(Color.ssAccent)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let err = errorMessage {
                 VStack(spacing: 12) {
                     Text(err)
@@ -30,6 +27,9 @@ struct HistoryDetailView: View {
                 }
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ProgressView().tint(Color.ssAccent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(Color.ssBackground.ignoresSafeArea())
@@ -51,7 +51,12 @@ struct HistoryDetailView: View {
                 let duration = Int((s.finishedAt ?? s.startedAt).timeIntervalSince(s.startedAt))
                 HStack(spacing: 12) {
                     statBadge(value: formatDuration(duration), label: "Duration")
-                    statBadge(value: "\(s.workoutSets.count)", label: "Sets")
+                    if s.workoutSets.count > 0 {
+                        statBadge(value: "\(s.workoutSets.count)", label: "Sets")
+                    }
+                    if !s.workoutCardio.isEmpty {
+                        statBadge(value: "\(s.workoutCardio.count)", label: "Cardio")
+                    }
                 }
                 energyCaptionView
 
@@ -64,6 +69,11 @@ struct HistoryDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
                     }
+                }
+
+                // Cardio cards
+                ForEach(s.workoutCardio.indices, id: \.self) { i in
+                    cardioCard(s.workoutCardio[i])
                 }
 
                 // Sets grouped by exercise
@@ -97,28 +107,24 @@ struct HistoryDetailView: View {
         }
     }
 
-    private var sessionWorkoutEnergy: (WorkoutEnergyResult, RestingEnergyResult)? {
-        guard let profile   = appState.profile,
-              let finishedAt = session.finishedAt,
-              !allBodyWeights.isEmpty else { return nil }
-        let dayStr = localDayString(from: session.startedAt)
-        guard let stats   = bodyStatsOn(day: dayStr, weights: allBodyWeights, profile: profile),
-              let resting = restingEnergy(stats: stats) else { return nil }
-        let wr = workoutEnergyFor(startedAt: session.startedAt, finishedAt: finishedAt, stats: stats)
-        return (wr, resting)
+    // MARK: - Energy
+
+    private var sessionEnergy: WorkoutEnergyFull? {
+        guard let profile = appState.profile, !allBodyWeights.isEmpty else { return nil }
+        return estimateWorkoutEnergy(slot: session.asSlot, weights: allBodyWeights, profile: profile)
     }
 
     @ViewBuilder
     private var energyCaptionView: some View {
-        if let (wr, rr) = sessionWorkoutEnergy {
+        if let wf = sessionEnergy {
             HStack(spacing: 6) {
                 Text("Estimated energy burned:")
                     .font(.caption)
                     .foregroundStyle(Color.ssTextMuted)
-                Text("\(formatEnergyEstimate(wr.kcal, unit: appState.energyUnit)) above resting")
+                Text("\(formatEnergyEstimate(wf.totalKcal, unit: appState.energyUnit)) above resting")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.ssTextSecondary)
-                InfoButton(content: .singleWorkout(wr, restingResult: rr), unit: appState.energyUnit)
+                InfoButton(content: .singleWorkout(wf), unit: appState.energyUnit)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else if appState.profile != nil {
@@ -128,6 +134,68 @@ struct HistoryDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+
+    // MARK: - Cardio card
+
+    private func cardioCard(_ row: WorkoutCardioRow) -> some View {
+        CardView {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(row.exercise?.name ?? row.activity.label)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if row.goalReached {
+                        Label("Goal reached", systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(Color.ssChartSeries)
+                    } else if let goal = row.goalText {
+                        Text(goal)
+                            .font(.caption)
+                            .foregroundStyle(Color.ssTextMuted)
+                    }
+                }
+                HStack(spacing: 8) {
+                    Label(row.durationText, systemImage: "clock")
+                    if let dist = row.distanceM, dist > 0 {
+                        Text("·")
+                        Text(formatDistanceDisplay(metres: dist, activity: row.activity, weightUnit: appState.weightUnit))
+                        if let pace = formatPace(distanceM: dist, durationS: row.durationS,
+                                                 activity: row.activity, weightUnit: appState.weightUnit) {
+                            Text("·")
+                            Text(pace)
+                        }
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(Color.ssTextMuted)
+
+                if let profile = appState.profile, !allBodyWeights.isEmpty {
+                    let est = row.energyEstimate(weights: allBodyWeights, profile: profile)
+                    if case .result(let r) = est {
+                        HStack(spacing: 4) {
+                            Text(formatEnergyEstimate(r.kcal, unit: appState.energyUnit))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.ssTextSecondary)
+                            if let resting = cardioResting() {
+                                InfoButton(content: .singleCardio(r, restingResult: resting),
+                                           unit: appState.energyUnit, weightUnit: appState.weightUnit)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private func cardioResting() -> RestingEnergyResult? {
+        guard let profile = appState.profile else { return nil }
+        let dayStr = localDayString(from: session.startedAt)
+        guard let stats = bodyStatsOn(day: dayStr, weights: allBodyWeights, profile: profile) else { return nil }
+        return restingEnergy(stats: stats)
+    }
+
+    // MARK: - Helpers
 
     private func statBadge(value: String, label: String) -> some View {
         VStack(spacing: 4) {

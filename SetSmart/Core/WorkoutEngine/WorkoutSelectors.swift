@@ -14,9 +14,15 @@ extension WorkoutState {
 
 extension WorkoutState {
 
+    var currentExercise: WorkoutExercise? {
+        queue.first.map { exercises[$0] }
+    }
+
     var currentSet: CurrentSetInfo? {
         guard case .set = phase, let idx = queue.first else { return nil }
         let ex = exercises[idx]
+        guard !ex.isCardio else { return nil }  // nil when current exercise is cardio
+
         let setNumber  = ex.logged.count + 1
         let totalSets  = ex.sets.count
         let targetIdx  = min(ex.logged.count, max(0, ex.sets.count - 1))
@@ -31,17 +37,17 @@ extension WorkoutState {
         }()
 
         return CurrentSetInfo(
-            exerciseName:    ex.name,
-            setNumber:       setNumber,
-            totalSets:       totalSets,
-            targetReps:      target.reps,
-            targetWeightKg:  target.weightKg,
-            previousReps:    previous?.reps,
+            exerciseName:     ex.name,
+            setNumber:        setNumber,
+            totalSets:        totalSets,
+            targetReps:       target.reps,
+            targetWeightKg:   target.weightKg,
+            previousReps:     previous?.reps,
             previousWeightKg: previous?.weightKg,
-            lastTimeReps:    lastTime?.reps,
+            lastTimeReps:     lastTime?.reps,
             lastTimeWeightKg: lastTime?.weightKg,
-            prefillReps:     previous?.reps ?? target.reps,
-            prefillWeightKg: previous?.weightKg ?? target.weightKg ?? lastTime?.weightKg
+            prefillReps:      previous?.reps ?? target.reps,
+            prefillWeightKg:  previous?.weightKg ?? target.weightKg ?? lastTime?.weightKg
         )
     }
 
@@ -49,6 +55,7 @@ extension WorkoutState {
         guard queue.count >= 2 else { return nil }
         let idx = queue[1]
         let ex  = exercises[idx]
+        guard !ex.isCardio else { return nil }
         let setNumber  = ex.logged.count + 1
         let totalSets  = ex.sets.count
         let targetIdx  = min(ex.logged.count, max(0, ex.sets.count - 1))
@@ -60,18 +67,23 @@ extension WorkoutState {
             return h.lastSets.isEmpty ? nil : h.lastSets[i]
         }()
         return CurrentSetInfo(
-            exerciseName:    ex.name,
-            setNumber:       setNumber,
-            totalSets:       totalSets,
-            targetReps:      target.reps,
-            targetWeightKg:  target.weightKg,
-            previousReps:    previous?.reps,
+            exerciseName:     ex.name,
+            setNumber:        setNumber,
+            totalSets:        totalSets,
+            targetReps:       target.reps,
+            targetWeightKg:   target.weightKg,
+            previousReps:     previous?.reps,
             previousWeightKg: previous?.weightKg,
-            lastTimeReps:    lastTime?.reps,
+            lastTimeReps:     lastTime?.reps,
             lastTimeWeightKg: lastTime?.weightKg,
-            prefillReps:     previous?.reps ?? target.reps,
-            prefillWeightKg: previous?.weightKg ?? target.weightKg ?? lastTime?.weightKg
+            prefillReps:      previous?.reps ?? target.reps,
+            prefillWeightKg:  previous?.weightKg ?? target.weightKg ?? lastTime?.weightKg
         )
+    }
+
+    var nextQueueExercise: WorkoutExercise? {
+        guard queue.count >= 2 else { return nil }
+        return exercises[queue[1]]
     }
 
     var restRemaining: TimeInterval? {
@@ -79,16 +91,26 @@ extension WorkoutState {
         return endsAt.timeIntervalSinceNow
     }
 
+    func cardioElapsed(now: Date) -> Double {
+        guard case .cardio(let t) = phase else { return 0 }
+        return t.elapsed(now: now)
+    }
+
     var canPostpone: Bool {
-        phase != .complete && queue.count >= 2
+        !phase.isCardio && phase != .complete && queue.count >= 2
     }
 
     var totals: WorkoutTotals {
-        WorkoutTotals(
-            setsLogged:    exercises.reduce(0) { $0 + $1.logged.count },
-            setsPlanned:   exercises.reduce(0) { $0 + $1.sets.count },
-            volumeKg:      exercises.reduce(0) { $0 + $1.logged.reduce(0) { $0 + Double($1.reps) * ($1.weightKg ?? 0) } },
-            exercisesDone: exercises.filter { $0.status == .done }.count
+        let weightExercises = exercises.filter { !$0.isCardio }
+        let cardioExercises = exercises.filter { $0.isCardio }
+        return WorkoutTotals(
+            setsLogged:    weightExercises.reduce(0) { $0 + $1.logged.count },
+            setsPlanned:   weightExercises.reduce(0) { $0 + $1.sets.count },
+            volumeKg:      weightExercises.reduce(0) { $0 + $1.logged.reduce(0) { $0 + Double($1.reps) * ($1.weightKg ?? 0) } },
+            exercisesDone: exercises.filter { $0.status == .done }.count,
+            cardioLogged:  cardioExercises.filter { $0.cardioLog != nil }.count,
+            cardioPlanned: cardioExercises.count,
+            cardioSeconds: cardioExercises.compactMap { $0.cardioLog?.durationS }.reduce(0, +)
         )
     }
 
@@ -96,7 +118,7 @@ extension WorkoutState {
     var prs: [UUID: PRResult] {
         var result: [UUID: PRResult] = [:]
         for ex in exercises {
-            guard let history = ex.history else { continue }
+            guard let history = ex.history, !ex.isCardio else { continue }
             let bestE1rm    = ex.logged.compactMap { s -> Double? in
                 guard let w = s.weightKg else { return nil }
                 return WorkoutState.epley(weight: w, reps: s.reps)
@@ -109,5 +131,12 @@ extension WorkoutState {
             }
         }
         return result
+    }
+}
+
+extension Phase {
+    var isCardio: Bool {
+        if case .cardio = self { return true }
+        return false
     }
 }

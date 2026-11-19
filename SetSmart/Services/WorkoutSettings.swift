@@ -21,4 +21,10 @@ final class WorkoutSettings {
         get { defaults.object(forKey: "countdownBeeps") == nil ? true : defaults.bool(forKey: "countdownBeeps") }
         set { defaults.set(newValue, forKey: "countdownBeeps") }
     }
+
+    func reset() {
+        defaults.removeObject(forKey: "alarmSound")
+        defaults.removeObject(forKey: "haptics")
+        defaults.removeObject(forKey: "countdownBeeps")
+    }
 }

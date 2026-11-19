@@ -18,11 +18,20 @@ struct SummaryScreenView: View {
         Int((workout.finishedAt ?? Date()).timeIntervalSince(workout.startedAt))
     }
 
+    private var loggedCardioExercises: [WorkoutExercise] {
+        workout.exercises.filter { $0.isCardio && $0.cardioLog != nil }
+    }
+
+    private var canSave: Bool {
+        (totals.setsLogged > 0 || totals.cardioLogged > 0) && !isSaving
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     statsCards
+                    if !loggedCardioExercises.isEmpty { cardioSection }
                     prSection
                     notesField
                     if let err = saveError {
@@ -53,12 +62,21 @@ struct SummaryScreenView: View {
         }
     }
 
+    // MARK: - Stats cards
+
     private var statsCards: some View {
         HStack(spacing: 12) {
             statCard(value: formatDuration(durationSeconds), label: "Duration")
-            statCard(value: "\(totals.setsLogged)", label: "Sets")
-            statCard(value: "\(String(format: "%g", unit.fromKg(totals.volumeKg))) \(unit.rawValue)",
-                     label: "Volume")
+            if totals.setsLogged > 0 {
+                statCard(value: "\(totals.setsLogged)", label: "Sets")
+                statCard(
+                    value: "\(String(format: "%g", unit.fromKg(totals.volumeKg))) \(unit.rawValue)",
+                    label: "Volume"
+                )
+            }
+            if totals.cardioSeconds > 0 {
+                statCard(value: formatCardioTime(totals.cardioSeconds), label: "Cardio")
+            }
         }
     }
 
@@ -72,6 +90,49 @@ struct SummaryScreenView: View {
         .background(Color.ssSurface)
         .cornerRadius(12)
     }
+
+    // MARK: - Cardio section
+
+    private var cardioSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Cardio")
+                .font(.headline)
+
+            ForEach(loggedCardioExercises, id: \.exerciseId) { ex in
+                if let log = ex.cardioLog {
+                    HStack {
+                        Image(systemName: ex.cardio?.activity.systemImage ?? "figure.run")
+                            .foregroundStyle(Color.ssAccent)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ex.name).font(.subheadline.weight(.semibold))
+                            Text(cardioSummaryText(
+                                durationS:  log.durationS,
+                                distanceM:  log.distanceM,
+                                activity:   ex.cardio?.activity ?? .other,
+                                weightUnit: unit
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(Color.ssTextSecondary)
+                        }
+                        Spacer()
+                        if let goalS = ex.cardio?.targetDurationS, goalS > 0 {
+                            if log.durationS >= goalS {
+                                Image(systemName: "flag.fill")
+                                    .foregroundStyle(Color.ssAccent)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.ssSurface)
+                    .cornerRadius(10)
+                }
+            }
+        }
+    }
+
+    // MARK: - PR section
 
     @ViewBuilder
     private var prSection: some View {
@@ -111,6 +172,8 @@ struct SummaryScreenView: View {
         }
     }
 
+    // MARK: - Notes
+
     private var notesField: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Notes")
@@ -123,6 +186,8 @@ struct SummaryScreenView: View {
                 .cornerRadius(12)
         }
     }
+
+    // MARK: - Actions
 
     private var actionButtons: some View {
         Button {
@@ -140,7 +205,7 @@ struct SummaryScreenView: View {
             }
         }
         .buttonStyle(PrimaryButtonStyle())
-        .disabled(isSaving)
+        .disabled(!canSave)
     }
 
     private func formatDuration(_ s: Int) -> String {
